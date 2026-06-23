@@ -1396,13 +1396,13 @@ document.getElementById('processBtn').addEventListener('click', async () => {
     let nMatched=0, nMulti=0, nNotFound=0;
 
     groups.forEach((group, gi)=>{
-      const officeParts = [];
       const seenOffices = new Set();
+      const officeParts = [];
       const itemDetails = group.items.map(item=>{
         const office     = lookupOfficeForSku(item.sku);
         const stampValue = office || getFallback();
         const qty        = Math.max(1,parseInt(item.qty,10)||1);
-        // Push ONCE PER UNIQUE OFFICE — no duplicates
+        // Push office once per SKU — skip duplicates
         if (!seenOffices.has(stampValue)) {
           seenOffices.add(stampValue);
           officeParts.push(stampValue);
