@@ -953,11 +953,18 @@ function extractAwbNumber(text) {
   return m ? m[1] : null;
 }
 
-// Extract iThink order number: "Order : JE2604263268"
+// Extract iThink order number: "Order : JE2604263268" or "Order No. - JE2605271494"
 function extractIThinkOrderNo(text) {
-  // Format: "Order : JExxxxxxxxx" — space before colon, no hash
-  const m = String(text||'').match(/Order\s*:\s*([A-Za-z]{2}\d{8,})/i);
-  return m ? m[1].trim() : null;
+  // Format 1: "Order : JExxxxxxxxx" — space before colon, no hash
+  const m1 = String(text||'').match(/Order\s*:\s*([A-Za-z]{2}\d{8,})/i);
+  if (m1) return m1[1].trim();
+  // Format 2: "Order No. - JExxxxxxxxx" or "Order No.- JExxxxxxxxx"
+  const m2 = String(text||'').match(/Order\s*No\.?\s*[-–]\s*([A-Za-z]{2}\d{8,})/i);
+  if (m2) return m2[1].trim();
+  // Format 3: any JE + digits pattern near "Order"
+  const m3 = String(text||'').match(/Order[^:.\n]{0,20}(JE\d{8,})/i);
+  if (m3) return m3[1].trim();
+  return null;
 }
 
 
