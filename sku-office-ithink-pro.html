@@ -1397,12 +1397,16 @@ document.getElementById('processBtn').addEventListener('click', async () => {
 
     groups.forEach((group, gi)=>{
       const officeParts = [];
+      const seenOffices = new Set();
       const itemDetails = group.items.map(item=>{
         const office     = lookupOfficeForSku(item.sku);
         const stampValue = office || getFallback();
         const qty        = Math.max(1,parseInt(item.qty,10)||1);
-        // Push ONCE PER UNIT — user requirement: 424 | 424 (not 424×2)
-        for (let q=0;q<qty;q++) officeParts.push(stampValue);
+        // Push ONCE PER UNIQUE OFFICE — no duplicates
+        if (!seenOffices.has(stampValue)) {
+          seenOffices.add(stampValue);
+          officeParts.push(stampValue);
+        }
         return {sku:item.sku, qty, office:office||null, stampValue, found:!!office};
       });
 
