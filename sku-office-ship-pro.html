@@ -2565,68 +2565,78 @@ async function generatePicklistPDF(officeMap,title){
     });
   y -= SH+14;
 
-  /* ════ OFFICE BLOCKS ════ */
+ /* ════ OFFICE BLOCKS (with in-block pagination) ════ */
   offices.forEach(off=>{
     const skuData  = officeMap[off];
     const skuKeys  = Object.keys(skuData).sort();
     const totalQty = Object.values(skuData).reduce((s,v)=>s+v.qty, 0);
 
-    /* full block height */
-    const blockH = OHDR + CHDR + skuKeys.length*ROW + TOTR;
+    let si = 0;
+    let isContinuation = false;
 
-    /* if block doesn't fit, new page */
-    if(y - blockH < MARGIN_BOT) addPage();
+    while (si < skuKeys.length) {
+      // Not even room for a header + one row? Start a fresh page.
+      if (y - MARGIN_BOT < OHDR + CHDR + ROW) { addPage(); continue; }
 
-    const top = y;       /* top of this block */
-    const bot = y - blockH;
+      const remainingRows = skuKeys.length - si;
+      const spaceAvail = (y - MARGIN_BOT) - OHDR - CHDR;
+      let rowsThisPage = Math.min(remainingRows, Math.floor(spaceAvail / ROW));
 
-    /* ── 1. outer border rect (drawn first so header fills on top of it) ── */
-    page.drawRectangle({
-      x:ML, y:bot, width:CW, height:blockH,
-      color:WH, borderColor:BRD, borderWidth:0.6
-    });
+      // If this page would finish the table, make sure the TOTAL row also fits.
+      if (rowsThisPage === remainingRows) {
+        while (rowsThisPage > 0 && (spaceAvail - rowsThisPage*ROW) < TOTR) rowsThisPage--;
+      }
 
-    /* ── 2. office header band (light grey) ── */
-    page.drawRectangle({x:ML+0.4, y:top-OHDR, width:CW-0.8, height:OHDR, color:HDR});
-    /* bottom border of header band */
-    page.drawLine({start:{x:ML,y:top-OHDR}, end:{x:ML+CW,y:top-OHDR}, thickness:0.6, color:BRD});
-    page.drawText('Office '+off, {x:ML+10, y:top-OHDR+7, size:11, font:FB, color:BK});
-    const meta = skuKeys.length+' SKUs   Qty: '+totalQty;
-    drawRight(meta, FR, 8, W-MR-8, top-OHDR+8, DG);
-    y -= OHDR;
+      if (rowsThisPage <= 0) { addPage(); continue; }
 
-    /* ── 3. column-header row ── */
-    page.drawText('#',        {x:C_NO,  y:y-CHDR+5, size:7.5, font:FB, color:DG});
-    page.drawText('SKU CODE', {x:C_SKU, y:y-CHDR+5, size:7.5, font:FB, color:DG});
-    page.drawText('QTY',      {x:C_QTY-FR.widthOfTextAtSize('QTY',7.5), y:y-CHDR+5, size:7.5, font:FB, color:DG});
-    /* underline */
-    page.drawLine({start:{x:ML,y:y-CHDR+1}, end:{x:ML+CW,y:y-CHDR+1}, thickness:0.5, color:BRD});
-    y -= CHDR;
+      const theseKeys  = skuKeys.slice(si, si + rowsThisPage);
+      const willFinish = (si + rowsThisPage) >= skuKeys.length;
+      const blockH = OHDR + CHDR + theseKeys.length*ROW + (willFinish ? TOTR : 0);
+      const top = y, bot = y - blockH;
 
-    /* ── 4. SKU rows ── */
-    skuKeys.forEach((sku,si)=>{
-      const rowY = y - ROW + 5;
-      page.drawText(String(si+1), {x:C_NO,  y:rowY, size:8,  font:FR, color:DG});
-      const sd = sku.length>60 ? sku.slice(0,58)+'..' : sku;
-      page.drawText(sd,           {x:C_SKU, y:rowY, size:9,  font:FR, color:BK});
-      drawRight(String(skuData[sku].qty), FR, 9, C_QTY, rowY, BK);
-      /* light separator line below each row */
-      page.drawLine({
-        start:{x:ML+1, y:y-ROW+1},
-        end:  {x:ML+CW-1, y:y-ROW+1},
-        thickness:0.35, color:SEP
+      /* outer border */
+      page.drawRectangle({x:ML, y:bot, width:CW, height:blockH, color:WH, borderColor:BRD, borderWidth:0.6});
+
+      /* office header band */
+      page.drawRectangle({x:ML+0.4, y:top-OHDR, width:CW-0.8, height:OHDR, color:HDR});
+      page.drawLine({start:{x:ML,y:top-OHDR}, end:{x:ML+CW,y:top-OHDR}, thickness:0.6, color:BRD});
+      page.drawText('Office '+off+(isContinuation?' (cont.)':''), {x:ML+10, y:top-OHDR+7, size:11, font:FB, color:BK});
+      const meta = skuKeys.length+' SKUs   Qty: '+totalQty;
+      drawRight(meta, FR, 8, W-MR-8, top-OHDR+8, DG);
+      y -= OHDR;
+
+      /* column-header row (repeated on every continuation page) */
+      page.drawText('#',        {x:C_NO,  y:y-CHDR+5, size:7.5, font:FB, color:DG});
+      page.drawText('SKU CODE', {x:C_SKU, y:y-CHDR+5, size:7.5, font:FB, color:DG});
+      page.drawText('QTY',      {x:C_QTY-FR.widthOfTextAtSize('QTY',7.5), y:y-CHDR+5, size:7.5, font:FB, color:DG});
+      page.drawLine({start:{x:ML,y:y-CHDR+1}, end:{x:ML+CW,y:y-CHDR+1}, thickness:0.5, color:BRD});
+      y -= CHDR;
+
+      /* SKU rows for this page-segment only */
+      theseKeys.forEach((sku, idx)=>{
+        const rowY = y - ROW + 5;
+        page.drawText(String(si+idx+1), {x:C_NO,  y:rowY, size:8,  font:FR, color:DG});
+        const sd = sku.length>60 ? sku.slice(0,58)+'..' : sku;
+        page.drawText(sd,           {x:C_SKU, y:rowY, size:9,  font:FR, color:BK});
+        drawRight(String(skuData[sku].qty), FR, 9, C_QTY, rowY, BK);
+        page.drawLine({start:{x:ML+1, y:y-ROW+1}, end:{x:ML+CW-1, y:y-ROW+1}, thickness:0.35, color:SEP});
+        y -= ROW;
       });
-      y -= ROW;
-    });
 
-    /* ── 5. TOTAL row ── */
-    /* top line of total row */
-    page.drawLine({start:{x:ML,y:y}, end:{x:ML+CW,y:y}, thickness:0.55, color:BRD});
-    page.drawText('TOTAL', {x:C_SKU, y:y-TOTR+5, size:8.5, font:FB, color:BK});
-    drawRight(String(totalQty), FB, 9.5, C_QTY, y-TOTR+5, BK);
-    y -= TOTR;
+      si += theseKeys.length;
 
-    y -= GAP;
+      if (willFinish) {
+        /* TOTAL row */
+        page.drawLine({start:{x:ML,y:y}, end:{x:ML+CW,y:y}, thickness:0.55, color:BRD});
+        page.drawText('TOTAL', {x:C_SKU, y:y-TOTR+5, size:8.5, font:FB, color:BK});
+        drawRight(String(totalQty), FB, 9.5, C_QTY, y-TOTR+5, BK);
+        y -= TOTR;
+        y -= GAP;
+      } else {
+        isContinuation = true;
+        addPage();
+      }
+    }
   });
 
   /* ════ FOOTER on every page ════ */
