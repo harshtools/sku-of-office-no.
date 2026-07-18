@@ -2517,8 +2517,9 @@ async function generatePicklistPDF(officeMap,title){
   const ROW  = 17;   // each SKU row height
   const TOTR = 18;   // TOTAL row height
   const GAP  = 10;   // vertical gap between office blocks
+  const COLGAP = 16; // gap between the two columns when split
 
-  /* ── column X positions ── */
+  /* ── column X positions (single-column mode) ── */
   const C_NO  = ML+10;
   const C_SKU = ML+36;
   const C_QTY = W-MR-10;   // right-align qty here
@@ -2569,18 +2570,42 @@ async function generatePicklistPDF(officeMap,title){
   offices.forEach(off=>{
     const skuData  = officeMap[off];
     const skuKeys  = Object.keys(skuData).sort();
+    const n        = skuKeys.length;
     const totalQty = Object.values(skuData).reduce((s,v)=>s+v.qty, 0);
 
-    /* full block height */
-    const blockH = OHDR + CHDR + skuKeys.length*ROW + TOTR;
+    /* height if rendered as a single column */
+    const singleColH = OHDR + CHDR + n*ROW + TOTR;
+    /* height if split into 2 columns (taller of the two column row-counts) */
+    const leftCount  = Math.ceil(n/2);
+    const rightCount = n - leftCount;
+    const twoColH     = OHDR + CHDR + Math.max(leftCount,rightCount)*ROW + TOTR;
 
-    /* if block doesn't fit, new page */
-    if(y - blockH < MARGIN_BOT) addPage();
+    const available = y - MARGIN_BOT;
+
+    let useTwoCol = false;
+    let blockH = singleColH;
+
+    if (singleColH <= available) {
+      useTwoCol = false;
+      blockH = singleColH;
+    } else if (twoColH <= available) {
+      useTwoCol = true;
+      blockH = twoColH;
+    } else {
+      /* doesn't fit even split — move to a fresh page and decide again */
+      addPage();
+      const freshAvail = y - MARGIN_BOT;
+      if (singleColH <= freshAvail) {
+        useTwoCol = false; blockH = singleColH;
+      } else {
+        useTwoCol = true; blockH = twoColH;
+      }
+    }
 
     const top = y;       /* top of this block */
     const bot = y - blockH;
 
-    /* ── 1. outer border rect (drawn first so header fills on top of it) ── */
+    /* ── 1. outer border rect ── */
     page.drawRectangle({
       x:ML, y:bot, width:CW, height:blockH,
       color:WH, borderColor:BRD, borderWidth:0.6
@@ -2588,43 +2613,95 @@ async function generatePicklistPDF(officeMap,title){
 
     /* ── 2. office header band (light grey) ── */
     page.drawRectangle({x:ML+0.4, y:top-OHDR, width:CW-0.8, height:OHDR, color:HDR});
-    /* bottom border of header band */
     page.drawLine({start:{x:ML,y:top-OHDR}, end:{x:ML+CW,y:top-OHDR}, thickness:0.6, color:BRD});
     page.drawText('Office '+off, {x:ML+10, y:top-OHDR+7, size:11, font:FB, color:BK});
-    const meta = skuKeys.length+' SKUs   Qty: '+totalQty;
+    const meta = n+' SKUs   Qty: '+totalQty;
     drawRight(meta, FR, 8, W-MR-8, top-OHDR+8, DG);
     y -= OHDR;
 
-    /* ── 3. column-header row ── */
-    page.drawText('#',        {x:C_NO,  y:y-CHDR+5, size:7.5, font:FB, color:DG});
-    page.drawText('SKU CODE', {x:C_SKU, y:y-CHDR+5, size:7.5, font:FB, color:DG});
-    page.drawText('QTY',      {x:C_QTY-FR.widthOfTextAtSize('QTY',7.5), y:y-CHDR+5, size:7.5, font:FB, color:DG});
-    /* underline */
-    page.drawLine({start:{x:ML,y:y-CHDR+1}, end:{x:ML+CW,y:y-CHDR+1}, thickness:0.5, color:BRD});
-    y -= CHDR;
+    if (!useTwoCol) {
+      /* ── SINGLE COLUMN (original layout) ── */
 
-    /* ── 4. SKU rows ── */
-    skuKeys.forEach((sku,si)=>{
-      const rowY = y - ROW + 5;
-      page.drawText(String(si+1), {x:C_NO,  y:rowY, size:8,  font:FR, color:DG});
-      const sd = sku.length>60 ? sku.slice(0,58)+'..' : sku;
-      page.drawText(sd,           {x:C_SKU, y:rowY, size:9,  font:FR, color:BK});
-      drawRight(String(skuData[sku].qty), FR, 9, C_QTY, rowY, BK);
-      /* light separator line below each row */
-      page.drawLine({
-        start:{x:ML+1, y:y-ROW+1},
-        end:  {x:ML+CW-1, y:y-ROW+1},
-        thickness:0.35, color:SEP
+      /* column-header row */
+      page.drawText('#',        {x:C_NO,  y:y-CHDR+5, size:7.5, font:FB, color:DG});
+      page.drawText('SKU CODE', {x:C_SKU, y:y-CHDR+5, size:7.5, font:FB, color:DG});
+      page.drawText('QTY',      {x:C_QTY-FR.widthOfTextAtSize('QTY',7.5), y:y-CHDR+5, size:7.5, font:FB, color:DG});
+      page.drawLine({start:{x:ML,y:y-CHDR+1}, end:{x:ML+CW,y:y-CHDR+1}, thickness:0.5, color:BRD});
+      y -= CHDR;
+
+      skuKeys.forEach((sku,si)=>{
+        const rowY = y - ROW + 5;
+        page.drawText(String(si+1), {x:C_NO,  y:rowY, size:8,  font:FR, color:DG});
+        const sd = sku.length>60 ? sku.slice(0,58)+'..' : sku;
+        page.drawText(sd,           {x:C_SKU, y:rowY, size:9,  font:FR, color:BK});
+        drawRight(String(skuData[sku].qty), FR, 9, C_QTY, rowY, BK);
+        page.drawLine({
+          start:{x:ML+1, y:y-ROW+1},
+          end:  {x:ML+CW-1, y:y-ROW+1},
+          thickness:0.35, color:SEP
+        });
+        y -= ROW;
       });
-      y -= ROW;
-    });
 
-    /* ── 5. TOTAL row ── */
-    /* top line of total row */
-    page.drawLine({start:{x:ML,y:y}, end:{x:ML+CW,y:y}, thickness:0.55, color:BRD});
-    page.drawText('TOTAL', {x:C_SKU, y:y-TOTR+5, size:8.5, font:FB, color:BK});
-    drawRight(String(totalQty), FB, 9.5, C_QTY, y-TOTR+5, BK);
-    y -= TOTR;
+      page.drawLine({start:{x:ML,y:y}, end:{x:ML+CW,y:y}, thickness:0.55, color:BRD});
+      page.drawText('TOTAL', {x:C_SKU, y:y-TOTR+5, size:8.5, font:FB, color:BK});
+      drawRight(String(totalQty), FB, 9.5, C_QTY, y-TOTR+5, BK);
+      y -= TOTR;
+
+    } else {
+      /* ── TWO COLUMN LAYOUT ── */
+      const colW   = (CW - COLGAP) / 2;
+      const leftX  = ML;
+      const rightX = ML + colW + COLGAP;
+
+      const leftSkus  = skuKeys.slice(0, leftCount);
+      const rightSkus = skuKeys.slice(leftCount);
+
+      /* vertical divider between the two columns */
+      const dividerX = ML + colW + COLGAP/2;
+      page.drawLine({
+        start:{x:dividerX, y:top-OHDR},
+        end:  {x:dividerX, y:top-OHDR-(CHDR+Math.max(leftCount,rightCount)*ROW)},
+        thickness:0.5, color:BRD
+      });
+
+      function renderColumn(colX, skus, no0){
+        let cy = y;
+        const noX  = colX+8;
+        const skuX = colX+30;
+        const qtyX = colX+colW-8;
+
+        page.drawText('#',        {x:noX,  y:cy-CHDR+5, size:7.5, font:FB, color:DG});
+        page.drawText('SKU CODE', {x:skuX, y:cy-CHDR+5, size:7.5, font:FB, color:DG});
+        page.drawText('QTY',      {x:qtyX-FR.widthOfTextAtSize('QTY',7.5), y:cy-CHDR+5, size:7.5, font:FB, color:DG});
+        page.drawLine({start:{x:colX,y:cy-CHDR+1}, end:{x:colX+colW,y:cy-CHDR+1}, thickness:0.5, color:BRD});
+        cy -= CHDR;
+
+        skus.forEach((sku,si)=>{
+          const rowY = cy - ROW + 5;
+          page.drawText(String(no0+si+1), {x:noX,  y:rowY, size:8,  font:FR, color:DG});
+          const sd = sku.length>34 ? sku.slice(0,32)+'..' : sku;
+          page.drawText(sd,               {x:skuX, y:rowY, size:9,  font:FR, color:BK});
+          drawRight(String(skuData[sku].qty), FR, 9, qtyX, rowY, BK);
+          page.drawLine({
+            start:{x:colX+1, y:cy-ROW+1},
+            end:  {x:colX+colW-1, y:cy-ROW+1},
+            thickness:0.35, color:SEP
+          });
+          cy -= ROW;
+        });
+        return cy;
+      }
+
+      const leftEndY  = renderColumn(leftX,  leftSkus,  0);
+      const rightEndY = renderColumn(rightX, rightSkus, leftCount);
+      y = Math.min(leftEndY, rightEndY);
+
+      page.drawLine({start:{x:ML,y:y}, end:{x:ML+CW,y:y}, thickness:0.55, color:BRD});
+      page.drawText('TOTAL', {x:C_SKU, y:y-TOTR+5, size:8.5, font:FB, color:BK});
+      drawRight(String(totalQty), FB, 9.5, C_QTY, y-TOTR+5, BK);
+      y -= TOTR;
+    }
 
     y -= GAP;
   });
