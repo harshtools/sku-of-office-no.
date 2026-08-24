@@ -1427,7 +1427,7 @@ button, input, select, label, .zoom-btn, .pcard-btn,
         <div class="lp-divider" style="margin-top:12px">Rack No. Stamp Settings</div>
         <div class="sg5">
           <div class="field"><label>X</label><input type="number" id="rackPosX" value="20" min="0" max="600"></div>
-          <div class="field"><label>Y — Bottom</label><input type="number" id="rackPosY" value="26" min="0" max="850"></div>
+          <div class="field"><label>Y — Bottom</label><input type="number" id="rackPosY" value="23" min="0" max="850"></div>
           <div class="field"><label>Size pt</label><input type="number" id="rackFontSize" value="8" min="6" max="36"></div>
           <div class="field"><label>Weight</label>
             <select id="rackFontWeight"><option value="bold">Bold</option><option value="normal">Normal</option></select>
@@ -2247,7 +2247,7 @@ document.getElementById('processBtn').addEventListener('click', async () => {
   const prefix = document.getElementById('prefixText').value.trim();
 
   const rackPosX = parseInt(document.getElementById('rackPosX').value) || 20;
-  const rackPosY = parseInt(document.getElementById('rackPosY').value) || 26;
+  const rackPosY = parseInt(document.getElementById('rackPosY').value) || 23;
   const rackFontSize = parseInt(document.getElementById('rackFontSize').value) || 8;
   const rackSeparator = document.getElementById('rackSeparator').value || ' | ';
   const rackPrefix = document.getElementById('rackPrefixText').value.trim();
