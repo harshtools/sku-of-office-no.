@@ -1427,7 +1427,7 @@ button, input, select, label, .zoom-btn, .pcard-btn,
         <div class="lp-divider" style="margin-top:12px">Rack No. Stamp Settings</div>
         <div class="sg5">
           <div class="field"><label>X</label><input type="number" id="rackPosX" value="20" min="0" max="600"></div>
-          <div class="field"><label>Y — Bottom</label><input type="number" id="rackPosY" value="23" min="0" max="850"></div>
+          <div class="field"><label>Y — Bottom</label><input type="number" id="rackPosY" value="26" min="0" max="850"></div>
           <div class="field"><label>Size pt</label><input type="number" id="rackFontSize" value="8" min="6" max="36"></div>
           <div class="field"><label>Weight</label>
             <select id="rackFontWeight"><option value="bold">Bold</option><option value="normal">Normal</option></select>
@@ -1686,8 +1686,15 @@ function compareRackKeys(rawA, rawB) {
   return a[2] < b[2] ? -1 : (a[2] > b[2] ? 1 : 0);
 }
 // Sort an array of SKU keys by their rack value, looked up from a skuData map { sku: { qty, rack } }
+// Sort an array of SKU keys by their rack value, looked up from a skuData map { sku: { qty, rack } }.
+// When two SKUs have the same rack sort-key (most commonly: both have no rack at all),
+// fall back to sorting by SKU code alphabetically instead of leaving them in insertion order.
 function sortSkusByRack(skuKeys, skuData) {
-  return skuKeys.slice().sort((a, b) => compareRackKeys(skuData[a].rack, skuData[b].rack));
+  return skuKeys.slice().sort((a, b) => {
+    const rackCmp = compareRackKeys(skuData[a].rack, skuData[b].rack);
+    if (rackCmp !== 0) return rackCmp;
+    return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+  });
 }
 
 // ── SKU Cache (localStorage) ──
@@ -2247,7 +2254,7 @@ document.getElementById('processBtn').addEventListener('click', async () => {
   const prefix = document.getElementById('prefixText').value.trim();
 
   const rackPosX = parseInt(document.getElementById('rackPosX').value) || 20;
-  const rackPosY = parseInt(document.getElementById('rackPosY').value) || 23;
+  const rackPosY = parseInt(document.getElementById('rackPosY').value) || 26;
   const rackFontSize = parseInt(document.getElementById('rackFontSize').value) || 8;
   const rackSeparator = document.getElementById('rackSeparator').value || ' | ';
   const rackPrefix = document.getElementById('rackPrefixText').value.trim();
