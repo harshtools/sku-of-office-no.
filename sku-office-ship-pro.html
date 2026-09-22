@@ -1507,7 +1507,7 @@ button, input, select, label, .zoom-btn, .pcard-btn,
   <line x1="8" y1="16" x2="12" y2="16"/>
 </svg></span>
         <span class="btn-label">
-          <span class="btn-title">All Orders Picklist</span>
+          <span class="btn-title">Single Orders Picklist</span>
           <span class="btn-sub">office-wise PDF</span>
         </span>
       </button>
@@ -1593,7 +1593,7 @@ button, input, select, label, .zoom-btn, .pcard-btn,
     <div class="picklist-panels" id="picklistPanels">
       <div class="pcard lg-card">
         <div class="pcard-hdr">
-          <div class="pcard-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="m9 12 2 2 4-4"/><path d="M9 17h4"/></svg> All Orders Pick List</div>
+          <div class="pcard-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="m9 12 2 2 4-4"/><path d="M9 17h4"/></svg> All Orders Picklist</div>
           <div class="pcard-actions">
             <button class="pcard-btn violet lg-btn" id="panelAllGenBtn" disabled>⬇ Generate PDF</button>
           </div>
@@ -1602,7 +1602,7 @@ button, input, select, label, .zoom-btn, .pcard-btn,
       </div>
       <div class="pcard lg-card">
         <div class="pcard-hdr">
-          <div class="pcard-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l9 4.5-9 4.5-9-4.5L12 2z"/><path d="M21 12l-9 4.5L3 12"/><path d="M21 17l-9 4.5L3 17"/></svg> Combo Orders Pick List</div>
+          <div class="pcard-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l9 4.5-9 4.5-9-4.5L12 2z"/><path d="M21 12l-9 4.5L3 12"/><path d="M21 17l-9 4.5L3 17"/></svg> Combo Orders Picklist</div>
           <div class="pcard-actions">
             <button class="pcard-btn amber lg-btn" id="panelComboGenBtn" disabled><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Generate PDF</button>
           </div>
@@ -2637,19 +2637,19 @@ document.getElementById('previewPrintBtn').addEventListener('click', () => {
 });
 document.getElementById('picklistAllBtn').addEventListener('click', async () => {
   if (!allOrderData.length) { alert('Process PDF first.'); return; }
-  await generatePicklistPDF(buildOfficeMap(false), 'All Orders Pick List');
+  await generatePicklistPDF(buildOfficeMap(false), 'All Orders Picklist');
 });
 document.getElementById('picklistComboBtn').addEventListener('click', async () => {
   if (!allOrderData.length) { alert('Process PDF first.'); return; }
-  await generatePicklistPDF(buildOfficeMap(true), 'Combo Orders Pick List');
+  await generatePicklistPDF(buildOfficeMap(true), 'Combo Orders Picklist');
 });
 document.getElementById('panelAllGenBtn').addEventListener('click', async () => {
   if (!allOrderData.length) { alert('Process PDF first.'); return; }
-  await generatePicklistPDF(buildOfficeMap(false), 'All Orders Pick List');
+  await generatePicklistPDF(buildOfficeMap(false), 'All Orders Picklist');
 });
 document.getElementById('panelComboGenBtn').addEventListener('click', async () => {
   if (!allOrderData.length) { alert('Process PDF first.'); return; }
-  await generatePicklistPDF(buildOfficeMap(true), 'Combo Orders Pick List');
+  await generatePicklistPDF(buildOfficeMap(true), 'Combo Orders Picklist');
 });
 
 // ── Drag & drop ──
@@ -2737,7 +2737,7 @@ async function generatePicklistPDF(officeMap,title){
   const MARGIN_BOT = 44;   // footer reserve
 
   /* ── layout constants (all in pt) ── */
-  const PH   = 40;   // PICK LIST header box height
+  const PH   = 40;   // Picklist header box height
   const SH   = 34;   // summary box height
   const OHDR = 22;   // office block header band height
   const CHDR = 16;   // column-header row height
@@ -2775,9 +2775,9 @@ async function generatePicklistPDF(officeMap,title){
   /* ════ FIRST PAGE HEADER ════ */
   addPage();
 
-  /* PICK LIST bordered box */
+  /* Picklist bordered box */
   page.drawRectangle({x:ML, y:y-PH, width:CW, height:PH, color:WH, borderColor:BRD, borderWidth:0.7});
-  page.drawText('PICK LIST',        {x:ML+12, y:y-PH+26, size:14, font:FB, color:BK});
+  page.drawText('Picklist',        {x:ML+12, y:y-PH+26, size:14, font:FB, color:BK});
   page.drawText('John Ellies India',{x:ML+12, y:y-PH+11, size:7.5, font:FR, color:DG});
   page.drawText(title,              {x:ML+120, y:y-PH+26, size:8.5, font:FR, color:DG});
   page.drawText('Date: '+today,     {x:W-MR-76, y:y-PH+26, size:8.5, font:FR, color:DG});
