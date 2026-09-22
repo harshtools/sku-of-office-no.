@@ -2637,7 +2637,7 @@ document.getElementById('previewPrintBtn').addEventListener('click', () => {
 });
 document.getElementById('picklistAllBtn').addEventListener('click', async () => {
   if (!allOrderData.length) { alert('Process PDF first.'); return; }
-  await generatePicklistPDF(buildOfficeMap(false), 'All Orders Picklist');
+  await generatePicklistPDF(buildOfficeMap(false), 'Single Orders Picklist');
 });
 document.getElementById('picklistComboBtn').addEventListener('click', async () => {
   if (!allOrderData.length) { alert('Process PDF first.'); return; }
@@ -2645,7 +2645,7 @@ document.getElementById('picklistComboBtn').addEventListener('click', async () =
 });
 document.getElementById('panelAllGenBtn').addEventListener('click', async () => {
   if (!allOrderData.length) { alert('Process PDF first.'); return; }
-  await generatePicklistPDF(buildOfficeMap(false), 'All Orders Picklist');
+  await generatePicklistPDF(buildOfficeMap(false), 'Single Orders Picklist');
 });
 document.getElementById('panelComboGenBtn').addEventListener('click', async () => {
   if (!allOrderData.length) { alert('Process PDF first.'); return; }
