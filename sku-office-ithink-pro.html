@@ -1504,7 +1504,7 @@ document.getElementById('processBtn').addEventListener('click', async () => {
         const stampValue = office || getFallback();
         const qty = Math.max(1,parseInt(item.qty,10)||1);
         const key = stampValue + '||' + (rack || '-');
-        if (!seen.has(key)) { seen.add(key); officeParts.push(stampValue); rackParts.push(rack || '-'); }
+          for (let q = 0; q < qty; q++) { officeParts.push(stampValue); rackParts.push(rack || '-'); }
         return {sku:item.sku, qty, office, rack:rack||null, stampValue, found:!!office};
       });
       if (prefix && officeParts.length) officeParts[0] = prefix + officeParts[0];
