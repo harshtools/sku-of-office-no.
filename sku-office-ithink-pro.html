@@ -466,6 +466,20 @@ button, input, select, label, .zoom-btn, .pcard-btn,
           <div class="ibox" style="margin:0;align-self:end">Multi-SKU: <b style="color:#818cf8">426 | 411 | 411</b></div>
         </div>
 
+        <div class="lp-divider" style="margin-top:12px">Rack No. Stamp Settings</div>
+<div class="sg5">
+  <div class="field"><label>X</label><input type="number" id="rackPosX" value="20" min="0" max="600"></div>
+  <div class="field"><label>Y — Bottom</label><input type="number" id="rackPosY" value="31" min="0" max="850"></div>
+  <div class="field"><label>Size pt</label><input type="number" id="rackFontSize" value="8" min="6" max="36"></div>
+  <div class="field"><label>Weight</label>
+    <select id="rackFontWeight"><option value="bold">Bold</option><option value="normal">Normal</option></select>
+  </div>
+  <div class="field"><label>Prefix</label><input type="text" id="rackPrefixText" value="" maxlength="20"></div>
+</div>
+<div class="sg2">
+  <div class="field"><label>Separator</label><input type="text" id="rackSeparator" value=" | " maxlength="10"></div>
+</div>
+        
         <div class="lp-divider" style="margin-top:12px">Not Found</div>
         <div class="nfbox">
           <div class="nfbox-hdr">
@@ -658,8 +672,9 @@ async function loadFromGoogleSheet() {
       const cols = lines[i].split(',');
       const sku = (cols[0] || '').replace(/^"|"$/g, '').trim().toLowerCase();
       const office = (cols[1] || '').replace(/^"|"$/g, '').trim();
+           const rack = (cols[2] || '').replace(/^"|"$/g, '').trim();
       if (sku && office && sku !== 'sku') {
-        skuMap[sku] = office;
+        skuMap[sku] = { office, rack };
         count++;
       }
     }
@@ -690,6 +705,74 @@ let pdfFiles       = [];
 
 function freshBytes() { return new Uint8Array(pdfArrayBuffer.slice(0)); }
 
+  function rackSortKey(r) {
+  const rack = String(r || '').trim();
+  if (!rack || rack === '-') return [Infinity, Infinity, '\uffff'];
+  const p = rack.split('-').map(x => x.trim());
+  const n = parseInt(p[0], 10), row = parseInt(p[2], 10);
+  return [isNaN(row) ? Infinity : row, isNaN(n) ? Infinity : n, (p[1] || '\uffff').toUpperCase()];
+}
+function compareRackKeys(a, b) {
+  const x = rackSortKey(a), y = rackSortKey(b);
+  if (x[0] !== y[0]) return x[0] - y[0];
+  if (x[1] !== y[1]) return x[1] - y[1];
+  return x[2] < y[2] ? -1 : (x[2] > y[2] ? 1 : 0);
+}
+function sortSkusByRack(keys, data) {
+  return keys.slice().sort((a, b) => {
+    const c = compareRackKeys(data[a].rack, data[b].rack);
+    return c !== 0 ? c : a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+  });
+}
+function computeTokenOffsetsPdfLib(tokens, sep, font, size) {
+  const offs = []; let x = 0;
+  tokens.forEach((t, i) => {
+    offs.push(x); x += font.widthOfTextAtSize(String(t || ''), size);
+    if (i < tokens.length - 1) x += font.widthOfTextAtSize(sep, size);
+  });
+  return offs;
+}
+function fitOfficeSizePdfLib(font, size, min, maxW, tokens, sep) {
+  while (size > min) {
+    const offs = computeTokenOffsetsPdfLib(tokens, sep, font, size);
+    let w = 0;
+    tokens.forEach((t, i) => { w = Math.max(w, offs[i] + font.widthOfTextAtSize(String(t || ''), size)); });
+    if (w <= maxW) break;
+    size--;
+  }
+  return size;
+}
+// rack tokens line up under office tokens, but never overlap the previous token
+function computeAlignedOffsets(officeOffs, tokens, sep, measure) {
+  const offs = []; let cursor = 0; const sepW = measure(sep);
+  tokens.forEach((t, i) => {
+    const desired = (officeOffs && officeOffs[i] !== undefined) ? officeOffs[i] : cursor;
+    const x = Math.max(desired, cursor);
+    offs.push(x); cursor = x + measure(String(t || ''));
+    if (i < tokens.length - 1) cursor += sepW;
+  });
+  return offs;
+}
+function fitRackSizePdfLib(font, size, min, maxW, tokens, officeOffs, sep) {
+  while (size > min) {
+    const m = s => font.widthOfTextAtSize(s, size);
+    const offs = computeAlignedOffsets(officeOffs, tokens, sep, m);
+    let w = 0;
+    tokens.forEach((t, i) => { w = Math.max(w, offs[i] + m(String(t || ''))); });
+    if (w <= maxW) break;
+    size--;
+  }
+  return size;
+}
+function computeTokenOffsetsCanvas(ctx, tokens, sep) {
+  const offs = []; let x = 0; const sw = ctx.measureText(sep).width;
+  tokens.forEach((t, i) => {
+    offs.push(x); x += ctx.measureText(String(t || '')).width;
+    if (i < tokens.length - 1) x += sw;
+  });
+  return offs;
+}
+  
 // ── SKU Cache (localStorage) ──
 const SKU_KEY = 'je_sku_map', SKU_META = 'je_sku_meta';
 
@@ -750,7 +833,7 @@ if(document.getElementById('cacheClearBtn')) document.getElementById('cacheClear
 
 // ── Stamp Settings persistence ──
 const STAMP_SETTINGS_KEY = 'je_stamp_settings';
-const STAMP_SETTING_IDS  = ['posX','posY','fontSize','fontWeight','prefixText','separator','notFoundText','showNotFound'];
+const STAMP_SETTING_IDS  = ['posX','posY','fontSize','fontWeight','prefixText','separator','notFoundText','showNotFound','rackPosX','rackPosY','rackFontSize','rackFontWeight','rackPrefixText','rackSeparator'];
 
 function saveStampSettings() {
   try {
@@ -836,8 +919,12 @@ function getSkuVariants(sku) {
   return [...v];
 }
 function lookupOfficeForSku(sku) {
-  for (const k of getSkuVariants(sku))
-    if (skuMap[k] !== undefined && skuMap[k] !== '') return skuMap[k];
+  for (const k of getSkuVariants(sku)) {
+    const e = skuMap[k];
+    if (e === undefined || e === '') continue;
+    if (typeof e === 'string') return { office: e, rack: '' };
+    if (e.office) return e;
+  }
   return null;
 }
 function sanitizeSku(raw) {
@@ -1310,6 +1397,11 @@ document.getElementById('processBtn').addEventListener('click', async () => {
   const fontSize= parseInt(document.getElementById('fontSize').value)||8;
   const sep     = document.getElementById('separator').value||' | ';
   const prefix  = document.getElementById('prefixText').value.trim();
+  const rackPosX = parseInt(document.getElementById('rackPosX').value)||20;
+  const rackPosY = parseInt(document.getElementById('rackPosY').value)||31;
+  const rackFontSize = parseInt(document.getElementById('rackFontSize').value)||8;
+  const rackSep = document.getElementById('rackSeparator').value||' | ';
+  const rackPrefix = document.getElementById('rackPrefixText').value.trim();
   setProg(5); setStatus('PROCESSING','run');
   log('Loading PDF document...','warn');
 
@@ -1403,22 +1495,22 @@ document.getElementById('processBtn').addEventListener('click', async () => {
     let nMatched=0, nMulti=0, nNotFound=0;
 
     groups.forEach((group, gi)=>{
-      const seenOffices = new Set();
-      const officeParts = [];
+           const seen = new Set();
+      const officeParts = [], rackParts = [];
       const itemDetails = group.items.map(item=>{
-        const office     = lookupOfficeForSku(item.sku);
+        const m = lookupOfficeForSku(item.sku);
+        const office = m ? m.office : null;
+        const rack = m && m.rack ? String(m.rack).trim() : '';
         const stampValue = office || getFallback();
-        const qty        = Math.max(1,parseInt(item.qty,10)||1);
-        // Push office once per SKU — skip duplicates
-        if (!seenOffices.has(stampValue)) {
-          seenOffices.add(stampValue);
-          officeParts.push(stampValue);
-        }
-        return {sku:item.sku, qty, office:office||null, stampValue, found:!!office};
+        const qty = Math.max(1,parseInt(item.qty,10)||1);
+        const key = stampValue + '||' + (rack || '-');
+        if (!seen.has(key)) { seen.add(key); officeParts.push(stampValue); rackParts.push(rack || '-'); }
+        return {sku:item.sku, qty, office, rack:rack||null, stampValue, found:!!office};
       });
-
-      const rawStamp  = officeParts.join(sep);
-      const stamp     = prefix ? prefix+rawStamp : rawStamp;
+      if (prefix && officeParts.length) officeParts[0] = prefix + officeParts[0];
+      if (rackPrefix && rackParts.length) rackParts[0] = rackPrefix + rackParts[0];
+      
+      const stamp = officeParts.join(sep);
       const anyFound  = itemDetails.some(it=>it.found);
       const anyMiss   = itemDetails.some(it=>!it.found);
       const pageLabel = group.pageIdxs.map(p=>p+1).join('+');
@@ -1429,7 +1521,7 @@ document.getElementById('processBtn').addEventListener('click', async () => {
       else{nNotFound++;log(`Order ${group.orderNo} · page ${pageLabel} — not found: ${itemLabel}`,'err');}
 
       group.pageIdxs.forEach(pageIdx=>{
-        stampMap[pageIdx]={text:stamp, isNF:anyMiss&&!anyFound, isMulti:group.isMulti};
+                stampMap[pageIdx]={text:stamp, officeTokens:officeParts.slice(), rackTokens:rackParts.slice(), isNF:anyMiss&&!anyFound, isMulti:group.isMulti};
       });
 
       // ── allOrderData: built from ACTUAL PARSED QTY, independent of stamp ──
@@ -1453,16 +1545,29 @@ document.getElementById('processBtn').addEventListener('click', async () => {
     const fontReg  = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const useFont  = document.getElementById('fontWeight').value==='bold' ? fontBold : fontReg;
     const pages2   = pdfDoc.getPages();
-
+    const rackFont = document.getElementById('rackFontWeight').value==='bold' ? fontBold : fontReg;
     for (const [pidxStr, sInfo] of Object.entries(stampMap)){
       const pidx = parseInt(pidxStr,10);
       if (pidx>=pages2.length) continue;
-      const pg = pages2[pidx];
-      let ds = fontSize;
-      while (ds>5 && useFont.widthOfTextAtSize(sInfo.text,ds) > pg.getSize().width-posX-8) ds--;
-      pg.drawText(sInfo.text,{
-        x:posX, y:posY, size:ds, font:useFont,
-        color: sInfo.isNF ? rgb(0.85,0.1,0.1) : rgb(0,0,0)
+      const pg = pages2[pidx], pageW = pg.getSize().width;
+      const ds = fitOfficeSizePdfLib(useFont, fontSize, 5, pageW-posX-8, sInfo.officeTokens, sep);
+      const offs = computeTokenOffsetsPdfLib(sInfo.officeTokens, sep, useFont, ds);
+      const oc = sInfo.isNF ? rgb(0.85,0.1,0.1) : rgb(0,0,0);
+      sInfo.officeTokens.forEach((tok,i)=>{
+        pg.drawText(tok,{x:posX+offs[i],y:posY,size:ds,font:useFont,color:oc});
+        if (i<sInfo.officeTokens.length-1){
+          const w = useFont.widthOfTextAtSize(String(tok),ds);
+          pg.drawText(sep,{x:posX+offs[i]+w,y:posY,size:ds,font:useFont,color:oc});
+        }
+      });
+      const rds = fitRackSizePdfLib(rackFont, rackFontSize, 5, pageW-rackPosX-8, sInfo.rackTokens, offs, rackSep);
+      const rOffs = computeAlignedOffsets(offs, sInfo.rackTokens, rackSep, s=>rackFont.widthOfTextAtSize(s,rds));
+      sInfo.rackTokens.forEach((tok,i)=>{
+        pg.drawText(tok,{x:rackPosX+rOffs[i],y:rackPosY,size:rds,font:rackFont,color:rgb(0,0,0)});
+        if (i<sInfo.rackTokens.length-1){
+          const w = rackFont.widthOfTextAtSize(String(tok),rds);
+          pg.drawText(rackSep,{x:rackPosX+rOffs[i]+w,y:rackPosY,size:rds,font:rackFont,color:rgb(0,0,0)});
+        }
       });
     }
     stampedPdfBytes = await pdfDoc.save();
@@ -1487,10 +1592,22 @@ document.getElementById('processBtn').addEventListener('click', async () => {
       const ctx=cv.getContext('2d');
       await pg.render({canvasContext:ctx,viewport:rvp}).promise;
       const sInfo=stampMap[pi-1];
-      if (sInfo&&sInfo.text){
-        ctx.font=(document.getElementById('fontWeight').value==='bold'?'bold ':'')+`${fontSize*BASE_SCALE}px Arial`;
-        ctx.fillStyle=sInfo.isNF?'#dc2626':'#000000';
-        ctx.fillText(sInfo.text, posX*BASE_SCALE, rvp.height-(posY*BASE_SCALE));
+      if (sInfo&&sInfo.officeTokens&&sInfo.officeTokens.length){
+        const S = BASE_SCALE;
+        ctx.font=(document.getElementById('fontWeight').value==='bold'?'bold ':'')+`${fontSize*S}px Arial`;
+        const offs = computeTokenOffsetsCanvas(ctx, sInfo.officeTokens, sep);
+        ctx.fillStyle = sInfo.isNF ? '#dc2626' : '#000000';
+        sInfo.officeTokens.forEach((tok,i)=>{
+          ctx.fillText(tok, posX*S+offs[i], rvp.height-posY*S);
+          if (i<sInfo.officeTokens.length-1) ctx.fillText(sep, posX*S+offs[i]+ctx.measureText(String(tok)).width, rvp.height-posY*S);
+        });
+        ctx.font=(document.getElementById('rackFontWeight').value==='bold'?'bold ':'')+`${rackFontSize*S}px Arial`;
+        const rOffs = computeAlignedOffsets(offs, sInfo.rackTokens, rackSep, s=>ctx.measureText(s).width);
+        ctx.fillStyle = '#000000';
+        sInfo.rackTokens.forEach((tok,i)=>{
+          ctx.fillText(tok, rackPosX*S+rOffs[i], rvp.height-rackPosY*S);
+          if (i<sInfo.rackTokens.length-1) ctx.fillText(rackSep, rackPosX*S+rOffs[i]+ctx.measureText(String(tok)).width, rvp.height-rackPosY*S);
+        });
       }
       scroll.appendChild(cv);
       setProg(80+(pi/totalPages)*18);
@@ -1564,18 +1681,22 @@ document.getElementById('processBtn').addEventListener('click', async () => {
 // ════════════════════════════════════════════════════════════
 async function bakePDF() { return stampedPdfBytes; }
 
-function buildOfficeMap(comboOnly) {
+function buildOfficeMap(mode) {
+  if (mode === true) mode = 'combo';
+  if (!mode) mode = 'all';
   const map = {};
   for (const order of allOrderData) {
-    // comboOnly: multiple distinct SKUs OR any SKU qty > 1
-    if (comboOnly && !order.isMulti) continue;
+    if (mode === 'combo' && !order.isMulti) continue;
+    if (mode === 'single' && order.isMulti) continue;
     for (const item of order.items) {
       const sku = sanitizeSku(item.sku); if (!sku) continue;
       const off = item.office || 'Unknown';
       const qty = Math.max(1, parseInt(item.qty,10)||1);
-      if (!map[off]) map[off]={};
-      if (!map[off][sku]) map[off][sku]={qty:0};
-      map[off][sku].qty += qty;   // accumulate real qty, not stamp repeats
+      const rack = item.rack || null;
+      if (!map[off]) map[off] = {};
+      if (!map[off][sku]) map[off][sku] = {qty:0, rack: rack || '-'};
+      map[off][sku].qty += qty;
+      if (rack && map[off][sku].rack === '-') map[off][sku].rack = rack;
     }
   }
   return map;
@@ -1600,8 +1721,8 @@ function renderPicklistPanel(officeMap, panelType) {
     const block = document.createElement('div');
     block.className = 'off-block';
     let rows = '';
-    Object.keys(skus).sort().forEach(sku => {
-      rows += `<tr><td>${sku}</td><td><span class="qty-tag">${skus[sku].qty}</span></td></tr>`;
+    sortSkusByRack(Object.keys(skus), skus).forEach((sku, si) => {
+      rows += `<tr><td>${si+1}</td><td>${sku}</td><td>${skus[sku].rack||'-'}</td><td><span class="qty-tag">${skus[sku].qty}</span></td></tr>`;
     });
     block.innerHTML = `
       <div class="off-hdr" style="--c:${col}">
@@ -1609,7 +1730,7 @@ function renderPicklistPanel(officeMap, panelType) {
         <div class="off-hdr-meta">${Object.keys(skus).length} SKU · Qty ${totalQty}</div>
       </div>
       <table class="off-table">
-        <thead><tr><th>SKU Code</th><th>Qty</th></tr></thead>
+          <thead><tr><th>#</th><th>SKU Code</th><th>Rack No.</th><th>Qty</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>`;
     grid.appendChild(block);
@@ -1744,10 +1865,12 @@ async function generatePicklistPDF(officeMap,title){
   const ROW  = 17;   // each SKU row height
   const TOTR = 18;   // TOTAL row height
   const GAP  = 10;   // vertical gap between office blocks
+  const COLGAP = 16; // gap between the two columns when split
 
   /* ── column X positions ── */
   const C_NO  = ML+10;
   const C_SKU = ML+36;
+  const C_RACK = W-MR-112;  // Rack No. column starts here
   const C_QTY = W-MR-10;   // right-align qty here
 
   const today   = new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
@@ -1792,22 +1915,46 @@ async function generatePicklistPDF(officeMap,title){
     });
   y -= SH+14;
 
-  /* ════ OFFICE BLOCKS ════ */
+    /* ════ OFFICE BLOCKS ════ */
   offices.forEach(off=>{
     const skuData  = officeMap[off];
-    const skuKeys  = Object.keys(skuData).sort();
+    const skuKeys  = sortSkusByRack(Object.keys(skuData), skuData);
+    const n        = skuKeys.length;
     const totalQty = Object.values(skuData).reduce((s,v)=>s+v.qty, 0);
 
-    /* full block height */
-    const blockH = OHDR + CHDR + skuKeys.length*ROW + TOTR;
+    /* height if rendered as a single column */
+    const singleColH = OHDR + CHDR + n*ROW + TOTR;
+    /* height if split into 2 columns (taller of the two column row-counts) */
+    const leftCount  = Math.ceil(n/2);
+    const rightCount = n - leftCount;
+    const twoColH     = OHDR + CHDR + Math.max(leftCount,rightCount)*ROW + TOTR;
 
-    /* if block doesn't fit, new page */
-    if(y - blockH < MARGIN_BOT) addPage();
+    const available = y - MARGIN_BOT;
+
+    let useTwoCol = false;
+    let blockH = singleColH;
+
+    if (singleColH <= available) {
+      useTwoCol = false;
+      blockH = singleColH;
+    } else if (twoColH <= available) {
+      useTwoCol = true;
+      blockH = twoColH;
+    } else {
+      /* doesn't fit even split — move to a fresh page and decide again */
+      addPage();
+      const freshAvail = y - MARGIN_BOT;
+      if (singleColH <= freshAvail) {
+        useTwoCol = false; blockH = singleColH;
+      } else {
+        useTwoCol = true; blockH = twoColH;
+      }
+    }
 
     const top = y;       /* top of this block */
     const bot = y - blockH;
 
-    /* ── 1. outer border rect (drawn first so header fills on top of it) ── */
+    /* ── 1. outer border rect ── */
     page.drawRectangle({
       x:ML, y:bot, width:CW, height:blockH,
       color:WH, borderColor:BRD, borderWidth:0.6
@@ -1815,43 +1962,104 @@ async function generatePicklistPDF(officeMap,title){
 
     /* ── 2. office header band (light grey) ── */
     page.drawRectangle({x:ML+0.4, y:top-OHDR, width:CW-0.8, height:OHDR, color:HDR});
-    /* bottom border of header band */
     page.drawLine({start:{x:ML,y:top-OHDR}, end:{x:ML+CW,y:top-OHDR}, thickness:0.6, color:BRD});
     page.drawText('Office '+off, {x:ML+10, y:top-OHDR+7, size:11, font:FB, color:BK});
-    const meta = skuKeys.length+' SKUs   Qty: '+totalQty;
+    const meta = n+' SKUs   Qty: '+totalQty;
     drawRight(meta, FR, 8, W-MR-8, top-OHDR+8, DG);
     y -= OHDR;
 
-    /* ── 3. column-header row ── */
-    page.drawText('#',        {x:C_NO,  y:y-CHDR+5, size:7.5, font:FB, color:DG});
-    page.drawText('SKU CODE', {x:C_SKU, y:y-CHDR+5, size:7.5, font:FB, color:DG});
-    page.drawText('QTY',      {x:C_QTY-FR.widthOfTextAtSize('QTY',7.5), y:y-CHDR+5, size:7.5, font:FB, color:DG});
-    /* underline */
-    page.drawLine({start:{x:ML,y:y-CHDR+1}, end:{x:ML+CW,y:y-CHDR+1}, thickness:0.5, color:BRD});
-    y -= CHDR;
+    if (!useTwoCol) {
+      /* ── SINGLE COLUMN (original layout) ── */
 
-    /* ── 4. SKU rows ── */
-    skuKeys.forEach((sku,si)=>{
-      const rowY = y - ROW + 5;
-      page.drawText(String(si+1), {x:C_NO,  y:rowY, size:8,  font:FR, color:DG});
-      const sd = sku.length>60 ? sku.slice(0,58)+'..' : sku;
-      page.drawText(sd,           {x:C_SKU, y:rowY, size:9,  font:FR, color:BK});
-      drawRight(String(skuData[sku].qty), FR, 9, C_QTY, rowY, BK);
-      /* light separator line below each row */
-      page.drawLine({
-        start:{x:ML+1, y:y-ROW+1},
-        end:  {x:ML+CW-1, y:y-ROW+1},
-        thickness:0.35, color:SEP
+      /* column-header row */
+      page.drawText('#',        {x:C_NO,  y:y-CHDR+5, size:7.5, font:FB, color:DG});
+      page.drawText('SKU CODE', {x:C_SKU, y:y-CHDR+5, size:7.5, font:FB, color:DG});
+      page.drawText('RACK NO.', {x:C_RACK, y:y-CHDR+5, size:7.5, font:FB, color:DG});
+      page.drawText('QTY',      {x:C_QTY-FR.widthOfTextAtSize('QTY',7.5), y:y-CHDR+5, size:7.5, font:FB, color:DG});
+      page.drawLine({start:{x:ML,y:y-CHDR+1}, end:{x:ML+CW,y:y-CHDR+1}, thickness:0.5, color:BRD});
+      y -= CHDR;
+
+      skuKeys.forEach((sku,si)=>{
+        const rowY = y - ROW + 5;
+        page.drawText(String(si+1), {x:C_NO,  y:rowY, size:8,  font:FR, color:DG});
+        const sd = sku.length>44 ? sku.slice(0,42)+'..' : sku;
+        page.drawText(sd,           {x:C_SKU, y:rowY, size:9,  font:FR, color:BK});
+        const rackVal = skuData[sku].rack || '-';
+        const bd = rackVal.length>16 ? rackVal.slice(0,14)+'..' : rackVal;
+        page.drawText(bd,           {x:C_RACK, y:rowY, size:9,  font:FR, color:BK});
+        drawRight(String(skuData[sku].qty), FR, 9, C_QTY, rowY, BK);
+        page.drawLine({
+          start:{x:ML+1, y:y-ROW+1},
+          end:  {x:ML+CW-1, y:y-ROW+1},
+          thickness:0.35, color:SEP
+        });
+        y -= ROW;
       });
-      y -= ROW;
-    });
 
-    /* ── 5. TOTAL row ── */
-    /* top line of total row */
-    page.drawLine({start:{x:ML,y:y}, end:{x:ML+CW,y:y}, thickness:0.55, color:BRD});
-    page.drawText('TOTAL', {x:C_SKU, y:y-TOTR+5, size:8.5, font:FB, color:BK});
-    drawRight(String(totalQty), FB, 9.5, C_QTY, y-TOTR+5, BK);
-    y -= TOTR;
+      page.drawLine({start:{x:ML,y:y}, end:{x:ML+CW,y:y}, thickness:0.55, color:BRD});
+      page.drawText('TOTAL', {x:C_SKU, y:y-TOTR+5, size:8.5, font:FB, color:BK});
+      drawRight(String(totalQty), FB, 9.5, C_QTY, y-TOTR+5, BK);
+      y -= TOTR;
+
+    } else {
+      /* ── TWO COLUMN LAYOUT ── */
+      const colW   = (CW - COLGAP) / 2;
+      const leftX  = ML;
+      const rightX = ML + colW + COLGAP;
+
+      const leftSkus  = skuKeys.slice(0, leftCount);
+      const rightSkus = skuKeys.slice(leftCount);
+
+      /* vertical divider between the two columns */
+      const dividerX = ML + colW + COLGAP/2;
+      page.drawLine({
+        start:{x:dividerX, y:top-OHDR},
+        end:  {x:dividerX, y:top-OHDR-(CHDR+Math.max(leftCount,rightCount)*ROW)},
+        thickness:0.5, color:BRD
+      });
+
+      function renderColumn(colX, skus, no0){
+        let cy = y;
+        const noX  = colX+8;
+        const skuX = colX+26;
+        const rackX = colX+colW-66;
+        const qtyX = colX+colW-8;
+
+        page.drawText('#',        {x:noX,  y:cy-CHDR+5, size:7.5, font:FB, color:DG});
+        page.drawText('SKU CODE', {x:skuX, y:cy-CHDR+5, size:7.5, font:FB, color:DG});
+        page.drawText('RACK',     {x:rackX, y:cy-CHDR+5, size:7.5, font:FB, color:DG});
+        page.drawText('QTY',      {x:qtyX-FR.widthOfTextAtSize('QTY',7.5), y:cy-CHDR+5, size:7.5, font:FB, color:DG});
+        page.drawLine({start:{x:colX,y:cy-CHDR+1}, end:{x:colX+colW,y:cy-CHDR+1}, thickness:0.5, color:BRD});
+        cy -= CHDR;
+
+        skus.forEach((sku,si)=>{
+          const rowY = cy - ROW + 5;
+          page.drawText(String(no0+si+1), {x:noX,  y:rowY, size:8,  font:FR, color:DG});
+          const sd = sku.length>22 ? sku.slice(0,20)+'..' : sku;
+          page.drawText(sd,               {x:skuX, y:rowY, size:8.5,  font:FR, color:BK});
+          const rackVal = skuData[sku].rack || '-';
+          const bd = rackVal.length>10 ? rackVal.slice(0,9)+'..' : rackVal;
+          page.drawText(bd,               {x:rackX, y:rowY, size:8.5,  font:FR, color:BK});
+          drawRight(String(skuData[sku].qty), FR, 9, qtyX, rowY, BK);
+          page.drawLine({
+            start:{x:colX+1, y:cy-ROW+1},
+            end:  {x:colX+colW-1, y:cy-ROW+1},
+            thickness:0.35, color:SEP
+          });
+          cy -= ROW;
+        });
+        return cy;
+      }
+
+      const leftEndY  = renderColumn(leftX,  leftSkus,  0);
+      const rightEndY = renderColumn(rightX, rightSkus, leftCount);
+      y = Math.min(leftEndY, rightEndY);
+
+      page.drawLine({start:{x:ML,y:y}, end:{x:ML+CW,y:y}, thickness:0.55, color:BRD});
+      page.drawText('TOTAL', {x:C_SKU, y:y-TOTR+5, size:8.5, font:FB, color:BK});
+      drawRight(String(totalQty), FB, 9.5, C_QTY, y-TOTR+5, BK);
+      y -= TOTR;
+    }
 
     y -= GAP;
   });
