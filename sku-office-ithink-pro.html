@@ -272,6 +272,10 @@ body.light .lp-divider { color: #6b7090 !important; border-color: #e2e5f0 !impor
 .btn-sorted-desc:hover:not(:disabled) { background: rgba(251,191,36,.08); border-color: rgba(251,191,36,.4);  box-shadow: 0 0 24px rgba(251,191,36,.2); transform: translateY(-2px); }
 .btn-all    { color: var(--neon-purple); border-color: rgba(178,77,255,.2);  box-shadow: 0 0 12px rgba(178,77,255,.08); }
 .btn-all:hover:not(:disabled)    { background: rgba(178,77,255,.08); border-color: rgba(178,77,255,.4);  box-shadow: 0 0 24px rgba(178,77,255,.2); transform: translateY(-2px); }
+#downloadSortedBtn, #downloadSortedDescBtn { display: none !important; }
+.btn-single { color:#34d399; border-color:rgba(52,211,153,.2); box-shadow:0 0 12px rgba(52,211,153,.08); }
+.btn-single:hover:not(:disabled) { background:rgba(52,211,153,.08); border-color:rgba(52,211,153,.4); box-shadow:0 0 24px rgba(52,211,153,.2); transform:translateY(-2px); }
+.btn-single .btn-icon { background:rgba(52,211,153,.1); }
 .btn-combo  { color: var(--neon-pink);   border-color: rgba(255,60,172,.2);  box-shadow: 0 0 12px rgba(255,60,172,.08); }
 .btn-combo:hover:not(:disabled)  { background: rgba(255,60,172,.08); border-color: rgba(255,60,172,.4);  box-shadow: 0 0 24px rgba(255,60,172,.2); transform: translateY(-2px); }
 
@@ -335,7 +339,7 @@ canvas { border-radius: 8px; box-shadow: 0 4px 24px rgba(0,0,0,.6); width: 100% 
 .empty-st p { font-size: 12px; text-align: center; line-height: 1.7; opacity: .45; }
 
 /* PICKLIST PANELS */
-.picklist-panels { display: none; grid-template-columns: 1fr 1fr; gap: 14px; }
+.picklist-panels { display: none; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
 .pl-inner { padding: 12px; max-height: 420px; overflow-y: auto; }
 .pl-inner::-webkit-scrollbar { width: 3px; }
 .pl-inner::-webkit-scrollbar-thumb { background: rgba(255,255,255,.08); border-radius: 2px; }
@@ -444,7 +448,7 @@ button, input, select, label, .zoom-btn, .pcard-btn,
             <div class="upload-zone" id="pdfZone" onclick="document.getElementById('pdfInput').click()">
               <input type="file" accept=".pdf" id="pdfInput" multiple style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;">
               <span class="uz-icon">🏷️</span>
-              <div class="uz-lbl">Shiprocket / Velocity / iThink Labels</div>
+              <div class="uz-lbl">iThink Labels</div>
               <div class="uz-sub">.pdf · select multiple</div>
             </div>
             <div class="fstatus" id="pdfStatus">⬜ No file selected</div>
@@ -551,6 +555,13 @@ button, input, select, label, .zoom-btn, .pcard-btn,
           <span class="btn-sub">office-wise PDF</span>
         </span>
       </button>
+            <button class="act-btn btn-single lg-btn" id="picklistSingleBtn" disabled>
+        <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><line x1="9" y1="9" x2="15" y2="9"/><line x1="9" y1="13" x2="13" y2="13"/><circle cx="16.5" cy="13" r="1" fill="currentColor" stroke="none"/></svg></span>
+        <span class="btn-label">
+          <span class="btn-title">Single Order Picklist</span>
+          <span class="btn-sub">single-item orders only</span>
+        </span>
+      </button>
       <button class="act-btn btn-combo lg-btn" id="picklistComboBtn" disabled>
         <span class="btn-icon">📦</span>
         <span class="btn-label">
@@ -635,6 +646,15 @@ button, input, select, label, .zoom-btn, .pcard-btn,
           </div>
         </div>
         <div class="pl-inner" id="allOrdersGrid"><div class="pl-empty">Process labels first</div></div>
+      </div>
+      <div class="pcard lg-card">
+        <div class="pcard-hdr">
+          <div class="pcard-title">📄 Single Order Pick List</div>
+          <div class="pcard-actions">
+            <button class="pcard-btn green lg-btn" id="panelSingleGenBtn" disabled>⬇ Generate PDF</button>
+          </div>
+        </div>
+        <div class="pl-inner" id="singleOrdersGrid"><div class="pl-empty">Process labels first</div></div>
       </div>
       <div class="pcard lg-card">
         <div class="pcard-hdr">
@@ -1388,7 +1408,7 @@ document.getElementById('processBtn').addEventListener('click', async () => {
   document.getElementById('statsRow').style.display='none';
   document.getElementById('previewSection').style.display='grid';
   document.getElementById('picklistPanels').style.display='none';
-  ['downloadBtn','downloadSortedBtn','downloadSortedDescBtn','picklistAllBtn','picklistComboBtn','previewDownloadBtn','previewPrintBtn','panelAllGenBtn','panelComboGenBtn']
+  ['downloadBtn','downloadSortedBtn','downloadSortedDescBtn','picklistAllBtn','picklistSingleBtn','picklistComboBtn','previewDownloadBtn','previewPrintBtn','panelAllGenBtn','panelSingleGenBtn','panelComboGenBtn']
     .forEach(id=>{document.getElementById(id).disabled=true;});
   stampedPdfBytes=null; sortedAscBytes=null; sortedDescBytes=null; allOrderData=[];
 
@@ -1624,6 +1644,7 @@ document.getElementById('processBtn').addEventListener('click', async () => {
     // Picklist is built from allOrderData (actual qty), NOT from stampMap
     setTimeout(()=>{
       renderPicklistPanel(buildOfficeMap(false),'all');
+      renderPicklistPanel(buildOfficeMap('single'),'single');
       renderPicklistPanel(buildOfficeMap(true),'combo');
     },100);
 
@@ -1663,7 +1684,7 @@ document.getElementById('processBtn').addEventListener('click', async () => {
     }
     // ── END STEP 6 ──────────────────────────────────────────────
 
-    ['downloadBtn','downloadSortedBtn','downloadSortedDescBtn','picklistAllBtn','picklistComboBtn','previewDownloadBtn','previewPrintBtn','panelAllGenBtn','panelComboGenBtn']
+    ['downloadBtn','downloadSortedBtn','downloadSortedDescBtn','picklistAllBtn','picklistSingleBtn','picklistComboBtn','previewDownloadBtn','previewPrintBtn','panelAllGenBtn','panelSingleGenBtn','panelComboGenBtn']
       .forEach(id=>{document.getElementById(id).disabled=false;});
     if (!sortedAscBytes)  document.getElementById('downloadSortedBtn').disabled=true;
     if (!sortedDescBytes) document.getElementById('downloadSortedDescBtn').disabled=true;
@@ -1706,12 +1727,13 @@ const BCOLS = ['#6366f1','#34d399','#fbbf24','#8b5cf6','#f43f5e','#22d3ee','#f47
 
 // ── Render picklist panel ──
 function renderPicklistPanel(officeMap, panelType) {
-  const gridId = panelType === 'combo' ? 'comboOrdersGrid' : 'allOrdersGrid';
+    const gridId = panelType === 'combo' ? 'comboOrdersGrid' : (panelType === 'single' ? 'singleOrdersGrid' : 'allOrdersGrid');
   const grid = document.getElementById(gridId);
   grid.innerHTML = '';
   const offices = Object.keys(officeMap).sort((a, b) => parseInt(a) - parseInt(b));
   if (!offices.length) {
-    grid.innerHTML = '<div class="pl-empty">' + (panelType === 'combo' ? 'No multi-item orders found' : 'No data') + '</div>';
+        const emptyMsg = panelType === 'combo' ? 'No multi-item orders found' : (panelType === 'single' ? 'No single-item orders found' : 'No data');
+    grid.innerHTML = '<div class="pl-empty">' + emptyMsg + '</div>';
     return;
   }
   offices.forEach((off, oi) => {
@@ -1742,7 +1764,7 @@ document.getElementById('downloadBtn').addEventListener('click', () => {
   if (!stampedPdfBytes) return;
   const blob = new Blob([stampedPdfBytes], { type: 'application/pdf' });
   const url = URL.createObjectURL(blob);
-  const a = document.createElement('a'); a.href = url; a.download = 'stamped_labels.pdf'; a.click();
+  const a = document.createElement('a'); a.href = url; a.download = 'ithink_stamped_labels.pdf'; a.click();
   URL.revokeObjectURL(url);
 });
 document.getElementById('downloadSortedBtn').addEventListener('click', () => {
@@ -1793,6 +1815,14 @@ document.getElementById('panelAllGenBtn').addEventListener('click', async () => 
 document.getElementById('panelComboGenBtn').addEventListener('click', async () => {
   if (!allOrderData.length) { alert('Process PDF first.'); return; }
   await generatePicklistPDF(buildOfficeMap(true), 'Combo Orders Pick List');
+});
+  document.getElementById('picklistSingleBtn').addEventListener('click', async () => {
+  if (!allOrderData.length) { alert('Process PDF first.'); return; }
+  await generatePicklistPDF(buildOfficeMap('single'), 'Single Order Pick List');
+});
+document.getElementById('panelSingleGenBtn').addEventListener('click', async () => {
+  if (!allOrderData.length) { alert('Process PDF first.'); return; }
+  await generatePicklistPDF(buildOfficeMap('single'), 'Single Order Pick List');
 });
 
 // ── Drag & drop ──
@@ -2079,7 +2109,7 @@ async function generatePicklistPDF(officeMap,title){
   const url   = URL.createObjectURL(blob);
   const a     = document.createElement('a');
   a.href = url;
-  a.download = 'JE_picklist_'+title.replace(/\s+/g,'_').toLowerCase()
+  a.download = 'JE_iThink_picklist_'+title.replace(/\s+/g,'_').toLowerCase()
                +'_'+new Date().toISOString().slice(0,10)+'.pdf';
   a.click();
   URL.revokeObjectURL(url);
